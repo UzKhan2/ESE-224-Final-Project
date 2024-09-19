@@ -1,14 +1,41 @@
 #include <iostream>
 #include <fstream>
+#include <sstream>
 #include <string>
+#include <vector>
 using namespace std;
 
 class Node
 {
 private:
-    string elem;
+    string startDate;
+    string endDate;
+    string substation;
+    string hospital;
+    string team;
+    string surgery;
+    int surgeryT;
+    int diffLevel;
     Node* previous = nullptr;
     Node* next = nullptr;
+
+    Node(const string& sd, const string& ed, const string& subst, const string& hosp, const string& tm, const string& surg, int surgT, int diff)
+        : startDate(sd), endDate(ed), substation(subst), hospital(hosp), team(tm), surgery(surg), surgeryT(surgT), diffLevel(diff), previous(nullptr), next(nullptr) {}
+
+    friend class DLinkedList;
+};
+
+class Ticket
+{
+private:
+    vector<std::string> logEntries;
+    Node* previous = nullptr;
+    Node* next = nullptr;
+
+    void addLogEntry(const std::string& log) {
+        logEntries.push_back(log);
+    }
+
     friend class DLinkedList;
 };
 
@@ -17,8 +44,8 @@ class DLinkedList
 public:
     DLinkedList()
     {
-        header = new Node;
-        trailer = new Node;
+        header = new Node("", "", "", "", "", "", 0, 0);
+        trailer = new Node("", "", "", "", "", "", 0, 0);
 
         header->next = trailer;
         header->previous = nullptr;
@@ -42,32 +69,14 @@ public:
         return (header->next == trailer);
     }
 
-    const string& front() const
+    void addFront(const string& sd, const string& ed, const string& subst, const string& hosp, const string& tm, const string& surg, int surgT, int diff)
     {
-        if (empty())
-        {
-            throw runtime_error("List is empty");
-        }
-        return header->next->elem;
+        add(header->next, sd, ed, subst, hosp, tm, surg, surgT, diff);
     }
 
-    const string& back() const
+    void addBack(const string& sd, const string& ed, const string& subst, const string& hosp, const string& tm, const string& surg, int surgT, int diff)
     {
-        if (empty())
-        {
-            throw runtime_error("List is empty");
-        }
-        return trailer->previous->elem;
-    }
-
-    void addFront(const string& e)
-    {
-        add(header->next, e);
-    }
-
-    void addBack(const string& e)
-    {
-        add(trailer, e);
+        add(trailer, sd, ed, subst, hosp, tm, surg, surgT, diff);
     }
 
     void removeFront()
@@ -93,7 +102,9 @@ public:
         Node* p = header->next;
         while (p != trailer)
         {
-            cout << p->elem << " ";
+            cout << "Start Date: " << p->startDate << ", End Date: " << p->endDate << ", Substation: " << p->substation
+                << ", Hospital: " << p->hospital << ", Team: " << p->team << ", Surgery: " << p->surgery
+                << ", Surgery Time: " << p->surgeryT << ", Difficulty Level: " << p->diffLevel << endl;
             p = p->next;
         }
         cout << endl;
@@ -104,10 +115,9 @@ private:
     Node* trailer;
 
 protected:
-    void add(Node* v, const string& e)
+    void add(Node* v, const string& sd, const string& ed, const string& subst, const string& hosp, const string& tm, const string& surg, int surgT, int diff)
     {
-        Node* n = new Node;
-        n->elem = e;
+        Node* n = new Node(sd, ed, subst, hosp, tm, surg, surgT, diff);
 
         n->next = v;
         n->previous = v->previous;
@@ -130,20 +140,54 @@ protected:
 
 int main()
 {
+    string startDate, endDate, substation, hospital, team, surgery;
+    int surgeryTime, difficultyLevel;
 
+    DLinkedList HD;
+    DLinkedList TD;
+
+    ifstream ticket("tickets.txt");
     ifstream file("HospitalDatabase.csv");
 
     if (file.is_open())
     {
         cout << "File opened successfully." << endl;
+
+        string line;
+        
+        getline(file, line);
+        while (getline(file, line))
+        {
+            stringstream part(line);
+            getline(part, startDate, ',');
+            getline(part, endDate, ',');
+            getline(part, substation, ',');
+            getline(part, hospital, ',');
+            getline(part, team, ',');
+            getline(part, surgery, ',');
+            part >> surgeryTime;
+            part.ignore(1);
+            part >> difficultyLevel;
+
+            HD.addBack(startDate, endDate, substation, hospital, team, surgery, surgeryTime, difficultyLevel);
+        }
+        file.close();
     }
     else
     {
-        cerr << "Failed to open file." << endl;
+        cout << "Failed to open file." << endl;
     }
 
-    file.close();
+    if (ticket.is_open())
+    {
+        cout << "File opened successfully." << endl;
+    }
+    else
+    {
+        cout << "Failed to open file." << endl;
+    }
 
+    HD.display();
 
     return 0;
 }
