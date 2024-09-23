@@ -5,6 +5,7 @@
 #include <iomanip>
 #include <string>
 #include <vector>
+#include <tuple>
 #include <queue>
 using namespace std;
 
@@ -19,6 +20,12 @@ public:
     string surgery;
     int surgeryT;
     int diffLevel;
+
+    HospitalNode()
+    {
+        surgeryT = 0;
+        diffLevel = 0;
+    }
 
     HospitalNode(const string& sd, const string& ed, const string& subst, const string& hosp, const string& tm, const string& surg, int surgT, int diff)
         : startDate(sd), endDate(ed), substation(subst), hospital(hosp), team(tm), surgery(surg), surgeryT(surgT), diffLevel(diff) {}
@@ -129,6 +136,40 @@ private:
             words2.begin(), words2.end(),
             back_inserter(commonWords));
         return static_cast<double>(commonWords.size()) / (words1.size() + words2.size() - commonWords.size());
+    }
+
+    void calculateTeamStats(const vector<string>& teams,
+        vector<vector<double>>& avgTime, vector<vector<int>>& surgeryCount) const
+    {
+        vector<string> surgeryTypes = getUniqueSurgeryTypes();
+        avgTime.resize(teams.size(), vector<double>(surgeryTypes.size(), 0.0));
+        surgeryCount.resize(teams.size(), vector<int>(surgeryTypes.size(), 0));
+
+        for (auto node = getHeader(); node != nullptr; node = getNext(node))
+        {
+            const HospitalNode& hn = getData(node);
+            auto teamIt = find(teams.begin(), teams.end(), hn.team);
+            auto surgeryIt = find(surgeryTypes.begin(), surgeryTypes.end(), hn.surgery);
+
+            if (teamIt != teams.end() && surgeryIt != surgeryTypes.end())
+            {
+                int teamIndex = distance(teams.begin(), teamIt);
+                int surgeryIndex = distance(surgeryTypes.begin(), surgeryIt);
+                avgTime[teamIndex][surgeryIndex] += hn.surgeryT;
+                surgeryCount[teamIndex][surgeryIndex]++;
+            }
+        }
+
+        for (int i = 0; i < teams.size(); ++i)
+        {
+            for (int j = 0; j < surgeryTypes.size(); ++j)
+            {
+                if (surgeryCount[i][j] > 0)
+                {
+                    avgTime[i][j] /= surgeryCount[i][j];
+                }
+            }
+        }
     }
 
 public:
@@ -450,14 +491,16 @@ public:
         {
             int availableCrews = totalCrews;
 
-            sort(unrepaired.begin(), unrepaired.end(), [&](const T* a, const T* b)
+            sort(unrepaired.begin(), unrepaired.end(),
+                [this, &hospitals](const T* a, const T* b)
                 {
-                    int aHospitalPriority = getHospitalPriority(a->getSubstation(), hospitals);
-                    int bHospitalPriority = getHospitalPriority(b->getSubstation(), hospitals);
+                    int aHospitalPriority = this->getHospitalPriority(a->getSubstation(), hospitals);
+                    int bHospitalPriority = this->getHospitalPriority(b->getSubstation(), hospitals);
                     return (a->affectedCustomers * a->estimatedRepairTime + aHospitalPriority) >
-                        (b->affectedCustomers * b->estimatedRepairTime + bHospitalPriority); });
+                        (b->affectedCustomers * b->estimatedRepairTime + bHospitalPriority);
+                });
 
-            for (vector<RepairJob*>::iterator it = unrepaired.begin(); it != unrepaired.end() && availableCrews > 0;)
+            for (auto it = unrepaired.begin(); it != unrepaired.end() && availableCrews > 0;)
             {
                 int requiredCrews = min(availableCrews, 3);
                 availableCrews -= requiredCrews;
@@ -483,6 +526,89 @@ public:
     int getHospitalPriority(const string& substation, const vector<string>& hospitals) const
     {
         return rand() % 101;
+    }
+
+    vector<pair<string, pair<int, double>>> predictTeamPerformance(double CAP, int outageHours, const vector<string>& teams) const
+    {
+        vector<string> surgeryTypes = getUniqueSurgeryTypes();
+        vector<vector<double>> avgTime;
+        vector<vector<int>> surgeryCount;
+        calculateTeamStats(teams, avgTime, surgeryCount);
+
+        vector<pair<string, pair<int, double>>> performances;
+        double capPerTeam = CAP / teams.size();
+
+        for (int i = 0; i < teams.size(); ++i)
+        {
+            int surgeriesPerformed = 0;
+            double totalEnergy = 0;
+            double teamCap = capPerTeam;
+
+            for (int j = 0; j < surgeryTypes.size(); ++j)
+            {
+                double expectedSurgeries = surgeryCount[i][j] * (outageHours / 24.0);
+                double energyNeeded = expectedSurgeries * avgTime[i][j];
+
+                if (energyNeeded <= teamCap)
+                {
+                    surgeriesPerformed += static_cast<int>(expectedSurgeries);
+                    totalEnergy += energyNeeded;
+                    teamCap -= energyNeeded;
+                }
+                else if (teamCap > 0)
+                {
+                    double ratio = teamCap / energyNeeded;
+                    surgeriesPerformed += static_cast<int>(expectedSurgeries * ratio);
+                    totalEnergy += teamCap;
+                    teamCap = 0;
+                }
+            }
+
+            double averageEnergy = surgeriesPerformed > 0 ? totalEnergy / surgeriesPerformed : 0;
+            performances.push_back({ teams[i], {surgeriesPerformed, averageEnergy} });
+        }
+
+        return performances;
+    }
+
+    void predictOutagesImpact(const vector<string>& teams) const
+    {
+        int treeOutages = 3;
+        int vehicleOutages = 2;
+        int insulatorOutages = 4;
+
+        int treeDuration = 4;
+        int vehicleDuration = 2;
+        int insulatorDuration = 6;
+
+        int treeCustomers = 1000;
+        int vehicleCustomers = 500;
+        int insulatorCustomers = 2000;
+
+        int totalOutageHours = treeOutages * treeDuration + vehicleOutages * vehicleDuration + insulatorOutages * insulatorDuration;
+
+        double CAP = 1000 * (treeOutages + vehicleOutages + insulatorOutages);
+
+        auto totalPerformance = predictTeamPerformance(CAP, totalOutageHours, teams);
+
+        int totalCustomerHourInterruptions =
+            treeOutages * treeDuration * treeCustomers +
+            vehicleOutages * vehicleDuration * vehicleCustomers +
+            insulatorOutages * insulatorDuration * insulatorCustomers;
+
+        cout << "Predicted power outages for next year:" << endl;
+        cout << "Tree-related outages: " << treeOutages << endl;
+        cout << "Vehicle-related outages: " << vehicleOutages << endl;
+        cout << "Insulator-related outages: " << insulatorOutages << endl;
+        cout << "Total outage hours: " << totalOutageHours << endl;
+        cout << "Expected total customer hour interruptions: " << totalCustomerHourInterruptions << endl;
+        cout << "\nPredicted team performances during outages:" << endl;
+        for (const pair<string, pair<int, double>>& perf : totalPerformance)
+        {
+            cout << "Team: " << perf.first << endl;
+            cout << "  Surgeries performed: " << perf.second.first << endl;
+            cout << "  Average energy usage: " << perf.second.second << " kWh" << endl;
+        }
     }
 };
 
@@ -1049,7 +1175,6 @@ int main()
                                 time += hospital.surgeryT;
                             }
                         }
-
                         double averagePoints = (time > 0) ? static_cast<double>(points) / (time / 60.0) : 0.0;
                         teamRankings.push_back({ team, averagePoints });
                     }
@@ -1080,7 +1205,7 @@ int main()
         case 3:
         {
             int analysisChoice = 0;
-            while (analysisChoice != 5)
+            while (analysisChoice != 4)
             {
                 cout << "Analysis Menu:" << endl;
                 cout << "1. Energy Optimization" << endl;
@@ -1134,7 +1259,14 @@ int main()
                         int totalCrews;
                         cout << "Enter total number of available crews: ";
                         cin >> totalCrews;
-                        ticketList.dispatchCrews(totalCrews, hospitals);
+                        if (totalCrews == 0)
+                        {
+                            cout << "No crew present" << endl;
+                        }
+                        else
+                        {
+                            ticketList.dispatchCrews(totalCrews, hospitals);
+                        }
                     }
                     else
                     {
@@ -1143,7 +1275,7 @@ int main()
                     break;
                 }
                 case 3:
-                    cout << "Outage prediction not implemented yet." << endl;
+                    hospitalList.predictOutagesImpact(teams);
                     break;
                 case 4:
                     cout << "Exiting Analysis." << endl;
